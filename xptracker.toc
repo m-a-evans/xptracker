@@ -1,0 +1,8 @@
+## Interface: 11501
+## Title: XP Tracker
+## Author: Griefless
+## Version: 0.5
+## Notes: Xp tracker addon
+## DefaultState: Enabled
+## LoadOnDemand: 0
+xptracker.lua
