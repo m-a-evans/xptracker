@@ -18,7 +18,7 @@ local g_levelsGained = 0;
 local g_isDebugMode = false;
 local g_currentXp = 0;
 local g_isOn = true;
-local g_MAX_LEVEL = 60;
+local g_MAX_LEVEL = 70;
 
 frame:SetScript("OnEvent", function(self, event, ...)
 	--dbug("event = " .. event);

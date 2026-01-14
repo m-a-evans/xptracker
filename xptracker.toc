@@ -1,4 +1,4 @@
-## Interface: 11501
+## Interface: 20505
 ## Title: XP Tracker
 ## Author: Griefless
 ## Version: 0.5
