@@ -1,8 +1,9 @@
 ## Interface: 20505
 ## Title: XP Tracker
 ## Author: Griefless
-## Version: 0.5
+## Version: 0.9
 ## Notes: Xp tracker addon
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
+## SavedVariablesPerCharacter: XptDb
 xptracker.lua
