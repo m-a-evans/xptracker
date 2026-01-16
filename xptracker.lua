@@ -25,46 +25,21 @@ local reputationData = nil;
 local trackedRep;
 local initialized = false;
 
--- Chat Setup
-ChatTypeInfo[CHAT_NAME] = {
-	r = 1.0,
-	g = 1.0,
-	b = 0.5,
-	sticky = 0
-};
-ChatTypeGroup[CHAT_NAME] = { CHAT_NAME };
-
-
--- This function prints strings into custom chat windows.
-local function DisplayToCustomChat(msg, r, g, b)
-    if (not isOn) then
-        return;
-    end
-
-    -- Determine final RGB values
-    local red   = r or 1;
-    local green = g or 1;
-    local blue  = b or 0.5;
-
-    -- Convert to WoW color code if custom RGB was provided
-    local coloredMsg
-    if r and g and b then
-        coloredMsg = ("|cff%02x%02x%02x%s|r"):format(red * 255, green * 255, blue * 255, msg);
-    else
-        coloredMsg = msg;
-    end
-
-    -- ChatTypeInfo entry for your category
-    local info = ChatTypeInfo[CHAT_NAME];
-
-	for i = 1, NUM_CHAT_WINDOWS do
-		local cframe = _G["ChatFrame"..i];
-
-		-- Fire the message through the chat system
-		cframe:AddMessage(
-			msg, r, g, b
-		);
+-- This function prints strings into a particular chat window.
+local function DisplayToChatById(chatID, msg, r, g, b)
+	if (not isOn) then
+		return;
 	end
+
+	local cframe = _G["ChatFrame"..chatID];
+	r = r or 1;
+	g = g or 1;
+	b = b or 0.5;
+
+	-- Fire the message through the chat system
+	cframe:AddMessage(
+		msg, r, g, b
+	);
 end
 
 -- This function prints strings into the default chat window, with an optional corresponding
@@ -73,32 +48,31 @@ local function DisplayToDefaultChat(msg, r, g, b)
 	if (not isOn) then
 		return;
 	end
-	local red, green, blue;
-	if r ~= nil and g ~= nil and b ~= nil then
-		red = r;
-		green = g;
-		blue = b;
-	else 
-		red = 1;
-		green = 1;
-		blue = 0.5;
-	end
+	r = r or 1;
+	g = g or 1;
+	b = b or 0.5;
 	DEFAULT_CHAT_FRAME:AddMessage(msg, red, green, blue);
+end
+
+-- This function prints strings into all chat windows.
+local function DisplayToAllChats(msg, r, g, b)
+	for i = 1, NUM_CHAT_WINDOWS do
+		DisplayToChatById(i, msg, r, g, b);
+	end
 end
 
 -- Displays text to chat with optional specified color
 local function DisplayToChat(msg, r, g, b)
-	DisplayToCustomChat(msg, r, g, b);
+	DisplayToAllChats(msg, r, g, b);
 end
 
 -- This function writes a debug message to chat window.
 local function dbug(...)
-	if isDebugMode then 
+	if (isDebugMode) then 
 		local msg;
 		local argsPassed = {...};
 		for i = 1, select('#', unpack(argsPassed)) do
 			msg = select(i, ...);
-			-- DEFAULT_CHAT_FRAME:AddMessage("DEBUG XPT - " .. tostring(msg));
 			DisplayToChat("DEBUG XPT - " .. tostring(msg));
 		end
 	end
@@ -121,7 +95,7 @@ end
 
 -- This function splits a string by a delimiter and returns the pieces in a table.
 local function split(str, delimiter)
-local result = {}
+	local result = {}
     for match in (str .. delimiter):gmatch("(.-)" .. delimiter) do
         table.insert(result, match)
     end
@@ -209,7 +183,7 @@ local function FormatTime(inTimeInSeconds)
 	local ret = "0 Hours 0 Minutes 0 Seconds";
 	local seconds = tonumber(inTimeInSeconds);
 	dbug("seconds = " .. tostring(seconds));
-	if seconds ~= nil then 
+	if (seconds) then 
 		local hours = math.floor(seconds / (60 * 60));
 		seconds = seconds - (hours * 60 * 60);
 		local minutes = math.floor(seconds / 60);
@@ -223,7 +197,7 @@ end
 local function ElapsedTimeInSeconds(startTime)
 	dbug("finding elapsed time... input: " .. startTime);
 	local ret;
-	if timeAtSessionStart ~= nil then
+	if (timeAtSessionStart) then
 		ret = (time() - startTime);
 	else 
 		ret = 0;
@@ -236,13 +210,13 @@ end
 local function XpTilNextLevelETA(xpGained, timeElapsedInSeconds)
 	dbug("determining xp til next level ... input: " .. xpGained .. ", " .. timeElapsedInSeconds);
 	local ret;
-	if timeElapsedInSeconds > 0 and xpGained > 0 then
+	if (timeElapsedInSeconds > 0 and xpGained > 0) then
 		dbug("xp remaining ", UnitXPMax("player") - UnitXP("player"));
 		-- xp remaining / rate at which xp was gained in hours = eta on next level in hours
 		dbug("without math floor " .. ((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
 		dbug("with " .. math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
 		ret = FormatTime(math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
-	elseif xpGained == 0 then
+	elseif (xpGained == 0) then
 		ret = "you haven't gained any xp!";
 	else
 		ret = "time hasn't elapsed!";
@@ -255,12 +229,12 @@ end
 local function RepTilNextLevelETA(repGained, repMin, repMax, timeElapsedInSeconds)
 	dbug("determining rep til next faction level ... input: " .. repGained .. ", " .. timeElapsedInSeconds);
 	local ret;
-	if timeElapsedInSeconds > 0 and repGained > 0 then
+	if (timeElapsedInSeconds > 0 and repGained > 0) then
 		dbug("rep remaining ", repGoal - repGained);
 		-- rep remaining / rate at which rep was gained in hours = eta on next rep level in hours
 		dbug("with " .. math.floor(repMax - repMin, repGained - repStart) / (repGained / timeElapsedInSeconds));
 		ret = FormatTime(math.floor(repMax - repGained - repStart) / (repGained / timeElapsedInSeconds));
-	elseif repGained == 0 then
+	elseif (repGained == 0) then
 		ret = "you haven't gained any xp!";
 	else
 		ret = "time hasn't elapsed!";
@@ -330,12 +304,12 @@ local function GoldRate(copperGained, timeElapsedInSeconds)
 		else 
 			local copperPerSecond = (copperGained / timeElapsedInSeconds);
 			dbug("copper per second " .. copperPerSecond);
-			
-			copperPerSecond = math.floor(copperPerSecond);
 			local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
 			dbug(timeIncrement, timeUnit);
+			local copperRate = math.floor(copperPerSecond * timeIncrement);
 			dbug(math.floor((math.abs(copperPerSecond))));
-			ret = GetCoinText(math.floor((math.abs(copperPerSecond)  * timeIncrement)), " ") .. " per " .. timeUnit;
+			dbug("copper rate " .. copperRate);
+			ret = GetCoinText(math.abs(copperRate), " ") .. " /" .. timeUnit;
 			if (copperPerSecond < 0) then
 				ret = "-" .. ret;
 			end
@@ -361,7 +335,7 @@ local function PrettyPrintXp(inElapsedTime)
 		local rate = 0;
 		local timeScale = 0; 
 		local timeScaleWord = "sec";
-		if levelsGained > 0 then
+		if (levelsGained > 0) then
 			-- Get running level xp, plus whatever the player has right now (new level xp starts at 0)
 			xpGained = xpGainedThisSession + UnitXP("player");
 		else 
@@ -373,10 +347,7 @@ local function PrettyPrintXp(inElapsedTime)
 		if (elapsedTime == nil) then
 			elapsedTime = ElapsedTimeInSeconds(timeAtSessionStart);
 		end
-        
-		--dbug("elapsed time");
-		--dbug(elapsedTime);
-        
+
 		local timeIncrement, timeUnit = GetAppropriateTimeSegment(elapsedTime);
         
 		dbug(timeIncrement);
@@ -400,9 +371,9 @@ local function PrettyPrintCash(inElapsedTime)
 	local netCash = GetMoney() - cashAtSessionStart;
 	local cashMessageBase = "Cash gained during session so far: ";
 	local cashMessage = cashMessageBase .. "... Nothing!! Your cash hasn't changed!";
-	if netCash > 0 then 
+	if (netCash > 0) then 
 		cashMessage = cashMessageBase .. GetCoinText(netCash, " ");
-	elseif netCash < 0 then
+	elseif (netCash < 0) then
 		cashMessage = cashMessageBase .. " -" .. GetCoinText(math.abs(netCash), " ");
 	end
 	DisplayToChat(cashMessage);
@@ -476,7 +447,7 @@ function frame:OnEvent(event, arg1)
 			end
 		end
 	elseif (event == "ADDON_LOADED" and arg1 == "xptracker") then
-		if XptDb == nil then 
+		if (XptDb == nil) then 
 			XptDb = {
 				trackedRep = nil
 			}
@@ -494,7 +465,7 @@ function frame:OnEvent(event, arg1)
 		levelsGained = levelsGained + 1;
 		dbug("unit xp max is detected as " .. tostring(UnitXPMax("player")));
 		dbug("xpGained is " .. tostring(xpGainedThisSession));
-		if levelsGained == 1 then 
+		if (levelsGained == 1) then 
 			dbug("1 level gained ... setting xpGained = " .. tostring(UnitXPMax("player") - xpAtSessionStart));
 			xpGainedThisSession = UnitXPMax("player") - xpAtSessionStart;		
 		else
