@@ -8,6 +8,11 @@ frame:RegisterEvent("PLAYER_LOGOUT"); -- Fired when about to log out
 -- constants
 local MAX_LEVEL = 70;
 local CHAT_NAME = "XPT_MSG";
+local DEFAULT_COLOR = {r=1, g=1, b=0.5};
+local MONEY_COLOR = {r=1, g=1, b=0.5};
+local XP_COLOR = {r=0, g=0.8, b=1};
+local REP_COLOR = {r=0, g=1, b=0.5};
+local REP_RANKS = {["21000"] = 21000, ["12000"] = 9000, ["6000"] = 3000, ["3000"] = 0};
 
 -- locals
 local xpAtSessionStart = 0;
@@ -26,44 +31,40 @@ local trackedRep;
 local initialized = false;
 
 -- This function prints strings into a particular chat window.
-local function DisplayToChatById(chatID, msg, r, g, b)
+local function DisplayToChatById(chatID, msg, color)
 	if (not isOn) then
 		return;
 	end
 
+	color = color or DEFAULT_COLOR;
 	local cframe = _G["ChatFrame"..chatID];
-	r = r or 1;
-	g = g or 1;
-	b = b or 0.5;
 
 	-- Fire the message through the chat system
 	cframe:AddMessage(
-		msg, r, g, b
+		msg, color.r, color.g, color.b
 	);
 end
 
 -- This function prints strings into the default chat window, with an optional corresponding
 -- color for the text.
-local function DisplayToDefaultChat(msg, r, g, b)
+local function DisplayToDefaultChat(msg, color)
 	if (not isOn) then
 		return;
 	end
-	r = r or 1;
-	g = g or 1;
-	b = b or 0.5;
-	DEFAULT_CHAT_FRAME:AddMessage(msg, red, green, blue);
+	color = color or DEFAULT_COLOR;
+	DEFAULT_CHAT_FRAME:AddMessage(msg, color.r, color.g, color.b);
 end
 
 -- This function prints strings into all chat windows.
-local function DisplayToAllChats(msg, r, g, b)
+local function DisplayToAllChats(msg, color)
 	for i = 1, NUM_CHAT_WINDOWS do
-		DisplayToChatById(i, msg, r, g, b);
+		DisplayToChatById(i, msg, color);
 	end
 end
 
 -- Displays text to chat with optional specified color
-local function DisplayToChat(msg, r, g, b)
-	DisplayToAllChats(msg, r, g, b);
+local function DisplayToChat(msg, color)
+	DisplayToAllChats(msg, color);
 end
 
 -- This function writes a debug message to chat window.
@@ -167,7 +168,7 @@ local function InitVariables()
 	dbug("setting xp at start to " , xpAtSessionStart);
 	--repGainedThisSession = 0;
 	cashAtSessionStart = GetMoney();
-	dbug("setting money to " , GetCoinText(cashAtSessionStart), " ");
+	dbug("setting money to " , GetCoinText(cashAtSessionStart), " " .. "(" .. cashAtSessionStart .. ")");
 	--faction = "";
 	xpTilNextLevel = XpTilNextLevel();
 	xpGainedThisSession = 0;
@@ -226,16 +227,16 @@ end
 
 -- This function estimates the time required to obtain the next rank of reputation. 
 -- The longer the play session, the more accurate (per rep).
-local function RepTilNextLevelETA(repGained, repMin, repMax, timeElapsedInSeconds)
-	dbug("determining rep til next faction level ... input: " .. repGained .. ", " .. timeElapsedInSeconds);
+local function RepTilNextLevelETA(repStart, repEnd, sessionGained, timeElapsedInSeconds)
+	dbug("determining rep til next faction level ... input: " .. repStart .. " - " .. repEnd .. "- " .. sessionGained .. ", " .. timeElapsedInSeconds);
 	local ret;
-	if (timeElapsedInSeconds > 0 and repGained > 0) then
-		dbug("rep remaining ", repGoal - repGained);
+	if (timeElapsedInSeconds > 0 and sessionGained > 0) then
+		dbug("rep remaining ", repEnd - sessionGained - repStart);
 		-- rep remaining / rate at which rep was gained in hours = eta on next rep level in hours
-		dbug("with " .. math.floor(repMax - repMin, repGained - repStart) / (repGained / timeElapsedInSeconds));
-		ret = FormatTime(math.floor(repMax - repGained - repStart) / (repGained / timeElapsedInSeconds));
-	elseif (repGained == 0) then
-		ret = "you haven't gained any xp!";
+		dbug("with " .. math.floor(repEnd - sessionGained - repStart) / (sessionGained / timeElapsedInSeconds));
+		ret = FormatTime(math.floor(repEnd - sessionGained - repStart) / (sessionGained / timeElapsedInSeconds));
+	elseif (sessionGained == 0) then
+		ret = "you haven't gained any reputation!";
 	else
 		ret = "time hasn't elapsed!";
 	end;
@@ -254,10 +255,9 @@ local function PrintReputationForFaction(timeElapsedInSeconds, factionID, showEt
 		local sessionGained = entry.current - entry.start;
 		if (sessionGained > 0) then		
 			local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
-			DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. (round2(sessionGained / (timeElapsedInSeconds / timeIncrement))) .. " rep /" .. timeUnit .. ")", 0, 1, 0);
-			if (showEta) then 
-				-- this doesnt work, need a way to feed it the amount gained since the last rep rank
-				-- DisplayToChat("Estimated time til next faction level: " .. RepTilNextLevelETA(entry.current, entry.start, entry.maxValue, timeElapsedInSeconds), 1, 1, 0);
+			DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. (round2(sessionGained / (timeElapsedInSeconds / timeIncrement))) .. " rep /" .. timeUnit .. ")", REP_COLOR);
+			if (showEta and entry.current > 0) then 
+				DisplayToChat("Estimated time til next faction level: " .. RepTilNextLevelETA(entry.minValue, entry.maxValue, sessionGained, timeElapsedInSeconds), REP_COLOR);
 			end
 		end
 	end
@@ -287,7 +287,7 @@ local function ListReps()
 			  _, _, isHeader, _, _, _,
 			  _, factionID = GetFactionInfo(i);
 		if (not isHeader) then 
-			DisplayToChat(name .. " {" .. factionID .. "}", 1, 1, 0);
+			DisplayToChat(name .. " {" .. factionID .. "}", REP_COLOR);
 		end
 	end
 end
@@ -307,11 +307,15 @@ local function GoldRate(copperGained, timeElapsedInSeconds)
 			local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
 			dbug(timeIncrement, timeUnit);
 			local copperRate = math.floor(copperPerSecond * timeIncrement);
-			dbug(math.floor((math.abs(copperPerSecond))));
-			dbug("copper rate " .. copperRate);
-			ret = GetCoinText(math.abs(copperRate), " ") .. " /" .. timeUnit;
-			if (copperPerSecond < 0) then
-				ret = "-" .. ret;
+			if (copperRate == 0) then
+				ret = "< 1 copper /" .. timeUnit;
+			else
+				dbug(math.floor((math.abs(copperPerSecond))));
+				dbug("copper rate " .. copperRate);
+				ret = GetCoinText(math.abs(copperRate), " ") .. " /" .. timeUnit;
+				if (copperPerSecond < 0) then
+					ret = "-" .. ret;
+				end
 			end
 		end;
 	else
@@ -354,10 +358,10 @@ local function PrettyPrintXp(inElapsedTime)
 		rate = math.floor(xpGained / (elapsedTime / timeIncrement));
         
 		DisplayToChat("Time Elapsed: " .. FormatTime(elapsedTime));
-		DisplayToChat("Experience gained during session so far: " .. xpGained,0,1,1);
-		DisplayToChat("Xp Rate: " .. rate .. " /" .. timeUnit, 0,1,1);
-		DisplayToChat("Levels gained during session so far: " .. levelsGained, 0,1,1);        
-		DisplayToChat("ETA til next level: " .. XpTilNextLevelETA(xpGained, elapsedTime), 0,1,1);
+		DisplayToChat("Experience gained during session so far: " .. xpGained, XP_COLOR);
+		DisplayToChat("Xp Rate: " .. rate .. " /" .. timeUnit, XP_COLOR);
+		DisplayToChat("Levels gained during session so far: " .. levelsGained, XP_COLOR);        
+		DisplayToChat("ETA til next level: " .. XpTilNextLevelETA(xpGained, elapsedTime), XP_COLOR);
 	end 
 end
 
@@ -376,8 +380,8 @@ local function PrettyPrintCash(inElapsedTime)
 	elseif (netCash < 0) then
 		cashMessage = cashMessageBase .. " -" .. GetCoinText(math.abs(netCash), " ");
 	end
-	DisplayToChat(cashMessage);
-	DisplayToChat("Cash Rate: " .. GoldRate(netCash, elapsedTime));
+	DisplayToChat(cashMessage, CASH_COLOR);
+	DisplayToChat("Cash Rate: " .. GoldRate(netCash, elapsedTime), CASH_COLOR);
 end
 
 -- This function runs through each pretty print for each category.
@@ -403,16 +407,16 @@ SlashCmdList["XPT"] = function(msg, editbox)
 	elseif (msg == "debug") then
 		ToggleDebug();
 		if isDebugMode then 
-			DisplayToChat("Debug Mode is on.", 1,0,0);
+			DisplayToChat("Debug Mode is on.", {r=1,g=0,b=0});
 		else 
 			DisplayToChat("Debug Mode is off.");
 		end
 	elseif (msg == "help") then
-		DisplayToChat("Type '/xpt' to get a printout of the session. Type '/xpt reset' to reset the current session. Type '/xpt mute' to toggle the mute.", 1, 1, 0);
-		DisplayToChat("Type '/xpt rep' to get a printout of all session's rep gains. Type '/xpt listrep' to list known reps. Type '/xpt setrep' to start tracking a rep.", 1, 1, 0);
+		DisplayToChat("Type '/xpt' to get a printout of the session. Type '/xpt reset' to reset the current session. Type '/xpt mute' to toggle the mute.", DEFAULT_COLOR);
+		DisplayToChat("Type '/xpt rep' to get a printout of all session's rep gains. Type '/xpt listrep' to list known reps. Type '/xpt setrep' to start tracking a rep.", DEFAULT_COLOR);
 	elseif (msg == "mute") then
 		if (isOn) then
-			DisplayToChat("Muting XPT...", 0, 1, 0);
+			DisplayToChat("Muting XPT...", DEFAULT_COLOR);
 			isOn = false;
 		else 
 			isOn = true;
@@ -428,10 +432,10 @@ SlashCmdList["XPT"] = function(msg, editbox)
 		dbug(#splitValues);
 		if (#splitValues > 1) then
 			trackedRep = splitValues[2];
-			DisplayToChat("Set tracked reputation to " .. reputationData[tonumber(trackedRep)].name,0,1,0);
+			DisplayToChat("Set tracked reputation to " .. reputationData[tonumber(trackedRep)].name, REP_COLOR);
 		else
 			trackedRep = nil;
-			DisplayToChat("Unset tracked reputation.", 0,1,0);
+			DisplayToChat("Unset tracked reputation.", REP_COLOR);
 		end
 		
 	end
@@ -440,18 +444,25 @@ end
 -- This is the event hooks that occur.
 function frame:OnEvent(event, arg1)
 	dbug("event = " .. event);
+	if (arg1) then 
+		dbug("arg1 = " .. tostring(arg1));
+	end
 	if (event == "PLAYER_ENTERING_WORLD") then
 		if (timeAtSessionStart) then 
 			if (time() - timeAtSessionStart > 5) then
-				PrettyPrint();
+				PrettyPrint(ElapsedTimeInSeconds(timeAtSessionStart));
 			end
 		end
 	elseif (event == "ADDON_LOADED" and arg1 == "xptracker") then
-		if (XptDb == nil) then 
-			XptDb = {
-				trackedRep = nil
-			}
-		end
+		C_Timer.After(10, function()
+			if (XptDb == nil) then 
+				XptDb = {
+					trackedRep = nil
+				}
+			end
+			InitVariables();
+		end);
+	elseif (event == "PLAYER_LOGIN") then 
 		InitVariables();
 	elseif (event == "PLAYER_LOGOUT") then 
 		XptDb.trackedRep = trackedRep;
