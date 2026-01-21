@@ -114,7 +114,7 @@ local function GetAppropriateTimeSegment(timeElapsedInSeconds)
 	return timeIncrement, timeUnit;
 end
 
--- This function searches through all the reputations and compiles them into g_reputationData.
+-- This function searches through all the reputations and compiles them into reputationData.
 local function GetReputations()
 	local reputationDataLocal = reputationData or {};
 	dbug("getting all reputation data...");
