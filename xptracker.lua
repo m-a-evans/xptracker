@@ -7,24 +7,18 @@ frame:RegisterEvent("PLAYER_LOGOUT"); -- Fired when about to log out
 
 -- constants
 local MAX_LEVEL = 70;
-local CHAT_NAME = "XPT_MSG";
 local DEFAULT_COLOR = {r=1, g=1, b=0.5};
-local MONEY_COLOR = {r=1, g=1, b=0.5};
+local CASH_COLOR = {r=1, g=1, b=0.5};
 local XP_COLOR = {r=0, g=0.8, b=1};
 local REP_COLOR = {r=0, g=1, b=0.5};
-local REP_RANKS = {["21000"] = 21000, ["12000"] = 9000, ["6000"] = 3000, ["3000"] = 0};
 
 -- locals
 local xpAtSessionStart = 0;
-local repGainedThisSession = 0;
 local cashAtSessionStart = 0;
-local faction = "";
 local timeAtSessionStart = nil;
-local xpTilNextLevel = 0;
 local xpGainedThisSession = 0;
 local levelsGained = 0;
 local isDebugMode = false;
-local currentXp = 0;
 local isOn = true;
 local reputationData = nil;
 local trackedRep;
@@ -77,11 +71,6 @@ local function dbug(...)
 			DisplayToChat("DEBUG XPT - " .. tostring(msg));
 		end
 	end
-end
-
--- This function finds the difference between next level xp, and current xp.
-local function XpTilNextLevel()
-	return (UnitXPMax("player") - UnitXP("player"));
 end
 
 -- This function toggles debug messages.
@@ -144,7 +133,8 @@ local function GetReputations()
 					start = earnedValue,
 					current = earnedValue,
 					minValue = bottomValue,
-					maxValue = topValue
+					maxValue = topValue,
+					factionID = factionID
 				};
 			else 
 				local entry = reputationDataLocal[factionID];
@@ -160,17 +150,12 @@ end
 
 -- This function initializes the global variables.
 local function InitVariables()
-	--init variables
 	dbug("initing variables...");
-	-- reset vars
 	timeAtSessionStart = time();
 	xpAtSessionStart = UnitXP("player");
 	dbug("setting xp at start to " , xpAtSessionStart);
-	--repGainedThisSession = 0;
 	cashAtSessionStart = GetMoney();
 	dbug("setting money to " , GetCoinText(cashAtSessionStart), " " .. "(" .. cashAtSessionStart .. ")");
-	--faction = "";
-	xpTilNextLevel = XpTilNextLevel();
 	xpGainedThisSession = 0;
 	levelsGained = 0;
 	trackedRep = XptDb.trackedRep;
@@ -182,7 +167,7 @@ end
 local function FormatTime(inTimeInSeconds) 
 	dbug("formatting time... input: " , inTimeInSeconds);
 	local ret = "0 Hours 0 Minutes 0 Seconds";
-	local seconds = tonumber(inTimeInSeconds);
+	local seconds = math.floor(tonumber(inTimeInSeconds));
 	dbug("seconds = " .. tostring(seconds));
 	if (seconds) then 
 		local hours = math.floor(seconds / (60 * 60));
@@ -252,14 +237,16 @@ local function PrintReputationForFaction(timeElapsedInSeconds, factionID, showEt
 	dbug("entry " .. factionID .. " in reputationData is " .. tostring(entry));
 	dbug(reputationData);
 	if (entry) then 
+		local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
 		local sessionGained = entry.current - entry.start;
-		if (sessionGained > 0) then		
-			local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
-			DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. (round2(sessionGained / (timeElapsedInSeconds / timeIncrement))) .. " rep /" .. timeUnit .. ")", REP_COLOR);
-			if (showEta and entry.current > 0) then 
-				DisplayToChat("Estimated time til next faction level: " .. RepTilNextLevelETA(entry.minValue, entry.maxValue, sessionGained, timeElapsedInSeconds), REP_COLOR);
-			end
-		end
+		local rate = 0;
+		if (sessionGained > 0) then
+			rate = (round2(sessionGained / (timeElapsedInSeconds / timeIncrement)));
+		end		
+		DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. rate .. " rep /" .. timeUnit .. ")", REP_COLOR);
+		if (showEta and entry.current > 0) then 
+			DisplayToChat("Estimated time til next faction level: " .. RepTilNextLevelETA(entry.minValue, entry.maxValue, sessionGained, timeElapsedInSeconds), REP_COLOR);
+		end		
 	end
 	return ret;
 end
@@ -267,28 +254,16 @@ end
 -- This function prints reputation data for ALL factions.
 local function PrintAllReputations(timeElapsedInSeconds)
 	GetReputations();
-	for i = 1, GetNumFactions() do
-		local _, _, _, _, _, _,
-			  _, _, isHeader, _, hasRep, _,
-			  _, factionID = GetFactionInfo(i);
-
-		if (not isHeader) then
-			if (reputationData[factionID]) then 
-				PrintReputationForFaction(timeElapsedInSeconds, factionID, false);
-			end
-		end
+	for key, _ in pairs(reputationData) do
+		PrintReputationForFaction(timeElapsedInSeconds, key, false);
 	end
 end
 
--- This function lists all factions and their corresponding IDs.
+-- This function lists all known factions and their corresponding IDs.
 local function ListReps()
-	for i = 1, GetNumFactions() do
-		local name, _, _, _, _, _,
-			  _, _, isHeader, _, _, _,
-			  _, factionID = GetFactionInfo(i);
-		if (not isHeader) then 
-			DisplayToChat(name .. " {" .. factionID .. "}", REP_COLOR);
-		end
+	GetReputations();
+	for key, value in pairs(reputationData) do
+		DisplayToChat(value.name .. " {" .. key .. "}", REP_COLOR);
 	end
 end
 
@@ -297,7 +272,6 @@ local function GoldRate(copperGained, timeElapsedInSeconds)
 	dbug("calculating gold per session...");
 	dbug(copperGained .. "    " .. timeElapsedInSeconds);
 	local ret = "";
-	--dbug(timeElapsedInSeconds);
 	if (timeElapsedInSeconds > 0) then
 		if (copperGained == 0 ) then
 			ret = "0 copper per anything. Nothin's been earned, ya ding bat!"
@@ -337,8 +311,6 @@ local function PrettyPrintXp(inElapsedTime)
 	if (UnitLevel("player") ~= MAX_LEVEL) then 
 		local xpGained;
 		local rate = 0;
-		local timeScale = 0; 
-		local timeScaleWord = "sec";
 		if (levelsGained > 0) then
 			-- Get running level xp, plus whatever the player has right now (new level xp starts at 0)
 			xpGained = xpGainedThisSession + UnitXP("player");
@@ -454,6 +426,7 @@ function frame:OnEvent(event, arg1)
 			end
 		end
 	elseif (event == "ADDON_LOADED" and arg1 == "xptracker") then
+		-- After 10 seconds (give everything time to load), init variables
 		C_Timer.After(10, function()
 			if (XptDb == nil) then 
 				XptDb = {
@@ -462,15 +435,8 @@ function frame:OnEvent(event, arg1)
 			end
 			InitVariables();
 		end);
-	elseif (event == "PLAYER_LOGIN") then 
-		InitVariables();
 	elseif (event == "PLAYER_LOGOUT") then 
 		XptDb.trackedRep = trackedRep;
-	elseif (event == "UPDATE_FACTION") then 
-		dbug("faction updated");
-		if (arg1 ~= nil) then 
-			dbug("arg1 is " .. arg1);
-		end
 	elseif (event == "PLAYER_LEVEL_UP") then
 		dbug("level up detected!");
 		levelsGained = levelsGained + 1;
