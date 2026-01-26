@@ -8,6 +8,7 @@ frame:RegisterEvent("PLAYER_LOGOUT"); -- Fired when about to log out
 -- constants
 local MAX_LEVEL = 70;
 local DEFAULT_COLOR = {r=1, g=1, b=0.5};
+local ERROR_COLOR = {r=1, g=0, b=0};
 local CASH_COLOR = {r=1, g=1, b=0.5};
 local XP_COLOR = {r=0, g=0.8, b=1};
 local REP_COLOR = {r=0, g=1, b=0.5};
@@ -118,7 +119,7 @@ end
 local function GetReputations()
 	local reputationDataLocal = reputationData or {};
 	dbug("getting all reputation data...");
-	dbug("Numfactions = ".. GetNumFactions());
+	-- dbug("Numfactions = ".. GetNumFactions());
 	for i = 1, GetNumFactions() do
 		local name, _, _, bottomValue, topValue, earnedValue,
 			  _, _, isHeader, _, hasRep, _,
@@ -166,89 +167,86 @@ end
 -- This function converts a seconds value to its nearest whole unit (minutes, hours).
 local function FormatTime(inTimeInSeconds) 
 	dbug("formatting time... input: " , inTimeInSeconds);
-	local ret = "0 Hours 0 Minutes 0 Seconds";
 	local seconds = math.floor(tonumber(inTimeInSeconds));
 	dbug("seconds = " .. tostring(seconds));
-	if (seconds) then 
-		local hours = math.floor(seconds / (60 * 60));
-		seconds = seconds - (hours * 60 * 60);
-		local minutes = math.floor(seconds / 60);
-		seconds = seconds - (minutes * 60);
-		ret = tostring(hours) .. " hours " .. tostring(minutes) .. " minutes " .. tostring(seconds) .. " seconds";
+	if (not seconds) then
+		return "0 Hours 0 Minutes 0 Seconds";
 	end
-	return ret;
+	local hours = math.floor(seconds / (60 * 60));
+	seconds = seconds - (hours * 60 * 60);
+	local minutes = math.floor(seconds / 60);
+	seconds = seconds - (minutes * 60);
+	return tostring(hours) .. " hours " .. tostring(minutes) .. " minutes " .. tostring(seconds) .. " seconds";
 end
 
 -- This function finds the time elapsed in seconds since we started tracking time.
 local function ElapsedTimeInSeconds(startTime)
 	dbug("finding elapsed time... input: " .. startTime);
-	local ret;
 	if (timeAtSessionStart) then
-		ret = (time() - startTime);
-	else 
-		ret = 0;
+		return (time() - startTime);
 	end
-	return ret;
+	return 0;
 end
 
 -- This function estimates the time it will take to obtain the next level, based on the 
 -- experience rate so far. The longer the play session, the more accurate.
 local function XpTilNextLevelETA(xpGained, timeElapsedInSeconds)
 	dbug("determining xp til next level ... input: " .. xpGained .. ", " .. timeElapsedInSeconds);
-	local ret;
-	if (timeElapsedInSeconds > 0 and xpGained > 0) then
-		dbug("xp remaining ", UnitXPMax("player") - UnitXP("player"));
-		-- xp remaining / rate at which xp was gained in hours = eta on next level in hours
-		dbug("without math floor " .. ((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
-		dbug("with " .. math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
-		ret = FormatTime(math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
-	elseif (xpGained == 0) then
-		ret = "you haven't gained any xp!";
-	else
-		ret = "time hasn't elapsed!";
-	end;
-	return ret;
+	if (timeElapsedInSeconds <= 0) then
+		return "time hasn't elasped yet! (This is likely a bug)";
+	elseif (xpGained == 0) then 
+		return "you haven't gained any xp!";
+	end
+	dbug("xp remaining ", UnitXPMax("player") - UnitXP("player"));
+	-- xp remaining / rate at which xp was gained in hours = eta on next level in hours
+	dbug("without math floor " .. ((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
+	dbug("with " .. math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
+	return FormatTime(math.floor((UnitXPMax("player") - UnitXP("player")) / (xpGained / timeElapsedInSeconds)));
 end
 
 -- This function estimates the time required to obtain the next rank of reputation. 
 -- The longer the play session, the more accurate (per rep).
-local function RepTilNextLevelETA(repStart, repEnd, sessionGained, timeElapsedInSeconds)
-	dbug("determining rep til next faction level ... input: " .. repStart .. " - " .. repEnd .. "- " .. sessionGained .. ", " .. timeElapsedInSeconds);
-	local ret;
-	if (timeElapsedInSeconds > 0 and sessionGained > 0) then
-		dbug("rep remaining ", repEnd - sessionGained - repStart);
-		-- rep remaining / rate at which rep was gained in hours = eta on next rep level in hours
-		dbug("with " .. math.floor(repEnd - sessionGained - repStart) / (sessionGained / timeElapsedInSeconds));
-		ret = FormatTime(math.floor(repEnd - sessionGained - repStart) / (sessionGained / timeElapsedInSeconds));
-	elseif (sessionGained == 0) then
-		ret = "you haven't gained any reputation!";
+local function RepTilNextLevelETA(repGoal, repCurrent, sessionGained, timeElapsedInSeconds)
+	dbug("determining rep til next faction level ... input: current=" .. repCurrent .. ", end=" .. repGoal .. ", sessionGained=" .. sessionGained .. ", secondsElapsed=" .. timeElapsedInSeconds);
+	if (timeElapsedInSeconds <= 0) then
+		return "time hasn't elasped yet! (This is likely a bug)";
+	elseif(sessionGained == 0) then 
+		return "your reputation hasn't changed!";
+	end
+	dbug("time elapsed ", timeElapsedInSeconds);
+	dbug("calced rate ", (sessionGained / (timeElapsedInSeconds)));
+	-- rep remaining / rate at which rep was gained in hours = eta on next rep level in hours
+	if (sessionGained > 0) then
+		dbug("rep gained/raw time=" .. math.floor(repGoal - repCurrent) / (sessionGained / timeElapsedInSeconds));
+		return FormatTime(math.floor(repGoal - repCurrent) / (sessionGained / timeElapsedInSeconds));
 	else
-		ret = "time hasn't elapsed!";
-	end;
-	return ret;
+		-- Negative session gain assumption is you are trying to LOSE reputation, so find til next lower rank
+		dbug("rep lost/raw time=" .. math.floor(repCurrent - repGoal) / (sessionGained / timeElapsedInSeconds));
+		return FormatTime(math.floor(repCurrent - repGoal) / (sessionGained / timeElapsedInSeconds));
+	end
 end
 
 -- This function prints reputation data for a particular faction.
 local function PrintReputationForFaction(timeElapsedInSeconds, factionID, showEta)
 	dbug("printing rep for faction " .. factionID);
-	local ret = "FactionID not in data! " .. factionID;
 	GetReputations();
 	local entry = reputationData[tonumber(factionID)];
-	dbug("entry " .. factionID .. " in reputationData is " .. tostring(entry));
-	dbug(reputationData);
-	if (entry) then 
-		local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
-		local sessionGained = entry.current - entry.start;
-		local rate = 0;
-		if (sessionGained > 0) then
-			rate = (round2(sessionGained / (timeElapsedInSeconds / timeIncrement)));
-		end		
-		DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. rate .. " rep /" .. timeUnit .. ")", REP_COLOR);
-		if (showEta and entry.current > 0) then 
-			DisplayToChat("Estimated time til next faction level: " .. RepTilNextLevelETA(entry.minValue, entry.maxValue, sessionGained, timeElapsedInSeconds), REP_COLOR);
-		end		
+	if (not entry) then 
+		DisplayToChat("FactionID not in data! This is likely a bug " .. factionID, ERROR_COLOR);
+		return;
 	end
-	return ret;
+	dbug("entry " .. factionID .. " in reputationData is " .. tostring(entry));
+	local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
+	local sessionGained = entry.current - entry.start;
+	local rate = (round2(sessionGained / (timeElapsedInSeconds / timeIncrement)));
+	DisplayToChat(entry.name .. ": " .. sessionGained .. " reputation gained. (" .. rate .. " rep /" .. timeUnit .. ")", REP_COLOR);
+	if (showEta) then 
+		if (sessionGained > 0) then 
+			DisplayToChat("ETA til next faction level: " .. RepTilNextLevelETA(entry.maxValue, entry.current, sessionGained, timeElapsedInSeconds), REP_COLOR);
+		else
+			DisplayToChat("ETA til next faction level: " .. RepTilNextLevelETA(entry.minValue, entry.current, sessionGained, timeElapsedInSeconds), REP_COLOR);
+		end
+	end
 end
 
 -- This function prints reputation data for ALL factions.
@@ -271,31 +269,28 @@ end
 local function GoldRate(copperGained, timeElapsedInSeconds)
 	dbug("calculating gold per session...");
 	dbug(copperGained .. "    " .. timeElapsedInSeconds);
-	local ret = "";
-	if (timeElapsedInSeconds > 0) then
-		if (copperGained == 0 ) then
-			ret = "0 copper per anything. Nothin's been earned, ya ding bat!"
-		else 
-			local copperPerSecond = (copperGained / timeElapsedInSeconds);
-			dbug("copper per second " .. copperPerSecond);
-			local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
-			dbug(timeIncrement, timeUnit);
-			local copperRate = math.floor(copperPerSecond * timeIncrement);
-			if (copperRate == 0) then
-				ret = "< 1 copper /" .. timeUnit;
-			else
-				dbug(math.floor((math.abs(copperPerSecond))));
-				dbug("copper rate " .. copperRate);
-				ret = GetCoinText(math.abs(copperRate), " ") .. " /" .. timeUnit;
-				if (copperPerSecond < 0) then
-					ret = "-" .. ret;
-				end
-			end
-		end;
+	if (timeElapsedInSeconds <= 0) then
+		return "time hasn't elapsed!";
+	elseif (copperGained == 0) then
+		return "0 copper per anything. Nothin's been earned, ya ding bat!"
+	end	
+	local copperPerSecond = (copperGained / timeElapsedInSeconds);
+	dbug("copper per second " .. copperPerSecond);
+	local timeIncrement, timeUnit = GetAppropriateTimeSegment(timeElapsedInSeconds);
+	dbug(timeIncrement, timeUnit);
+	local copperRate = math.floor(copperPerSecond * timeIncrement);
+	if (copperRate == 0) then
+		return "< 1 copper /" .. timeUnit;
 	else
-		ret = "time hasn't elapsed!";
-	end
-	return ret;
+		dbug(math.floor((math.abs(copperPerSecond))));
+		dbug("copper rate " .. copperRate);
+		local ret = "";
+		ret = GetCoinText(math.abs(copperRate), " ") .. " /" .. timeUnit;
+		if (copperPerSecond < 0) then
+			ret = "-" .. ret;
+		end
+		return ret;
+	end		
 end
 
 -- This function prints the currently tracked faction's reputation data.
@@ -379,7 +374,7 @@ SlashCmdList["XPT"] = function(msg, editbox)
 	elseif (msg == "debug") then
 		ToggleDebug();
 		if isDebugMode then 
-			DisplayToChat("Debug Mode is on.", {r=1,g=0,b=0});
+			DisplayToChat("Debug Mode is on.", ERROR_COLOR);
 		else 
 			DisplayToChat("Debug Mode is off.");
 		end
