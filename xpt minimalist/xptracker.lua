@@ -207,6 +207,20 @@ end
 -- This function estimates the time required to obtain the next rank of reputation. 
 -- The longer the play session, the more accurate (per rep).
 local function RepTilNextLevelETA(repGoal, repCurrent, sessionGained, timeElapsedInSeconds)
+	-- if rep is negative then we are trying to increase up to 0 if rep is increasing
+	if (sessionGained > 0) then
+		if (repGoal == 36000 and repCurrent < 0) then 
+			-- to move from hated -> hostile
+			repGoal = -6000;
+		elseif (repGoal == 3000 and repCurrent < -3000) then		
+			-- hostile -> unfriendly
+			repGoal = -3000;
+		elseif (repGoal == 3000 and repCurrent < 0) then
+			-- unfriendly -> neutral
+			repGoal = 0;
+		end
+	end
+
 	dbug("determining rep til next faction level ... input: current=" .. repCurrent .. ", end=" .. repGoal .. ", sessionGained=" .. sessionGained .. ", secondsElapsed=" .. timeElapsedInSeconds);
 	if (timeElapsedInSeconds <= 0) then
 		return "time hasn't elasped yet! (This is likely a bug)";
@@ -215,6 +229,7 @@ local function RepTilNextLevelETA(repGoal, repCurrent, sessionGained, timeElapse
 	end
 	dbug("time elapsed ", timeElapsedInSeconds);
 	dbug("calced rate ", (sessionGained / (timeElapsedInSeconds)));
+	
 	-- rep remaining / rate at which rep was gained in hours = eta on next rep level in hours
 	if (sessionGained > 0) then
 		dbug("rep gained/raw time=" .. math.floor(repGoal - repCurrent) / (sessionGained / timeElapsedInSeconds));
